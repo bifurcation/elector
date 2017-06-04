@@ -1,0 +1,353 @@
+<!doctype html5>
+<html>
+  <head>
+  <meta charset="utf-8"/>
+  <style type="text/css">
+
+body {
+  font-family: -apple-system, Helvetica Neue, sans-serif;
+}
+
+div {
+  border-bottom: 1px solid black;
+}
+
+button {
+  font-family: -apple-system, Helvetica Neue, sans-serif;
+  padding: 1ex 2ex;
+  font-weight: bold;
+  color: #fff;
+  background-color: #339;
+  border: 0;
+}
+
+input {
+  font-family: -apple-system, Helvetica Neue, sans-serif;
+  padding: 1ex 2ex;
+  font-weight: bold;
+}
+
+.state {
+  display: none;
+}
+
+.activeState {
+  display: block;
+}
+
+  </style>
+  <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
+  <script>
+  
+/*
+
+Data model:
+
+* Each org has an ID and an administrator code
+* Each voter gets a secret code
+* Each org has JSON object: { "voters": ..., "elections": ... }
+* For voters: The "voters" field is elided
+* For open elections: Only a missing-votes field is provided 
+
+{
+  // Internal to server
+  "admin": $CODE,
+
+  // Only provided to admin
+  "voters": {
+    "$SECRET_CODE": {
+      "name": $NAME,
+      "status": <ACTIVE / INACTIVE>,
+      ...
+    }
+  },
+
+  "elections": [
+    {
+      "title": $TITLE,
+      "state": <INIT / OPEN / CLOSED>,
+      "options": [
+        $OPTION,
+        ...
+      ],
+
+      // Internal to server 
+      "votes": {
+        "$SECRET_CODE": $OPTION_INDEX,
+        ...
+      },
+
+      // Present for OPEN
+      "missing": [
+        "$NAME",
+        ...
+      ],
+
+      // Present for CLOSED
+      "results": [
+        $OPTION_COUNT,
+        ...
+      ]
+    },
+    ...
+  ]
+}
+
+## Server ops
+
+create table state (org text, state text);
+
+-- Create org
+-- Get org state      -- Voter / Admin
+-- Add voter          -- Admin
+-- Deactivate voter   -- Admin
+-- Add election       -- Admin
+-- Open election      -- Admin
+-- Close election     -- Admin
+-- Vote               -- Voter
+
+
+## UX Flows
+
+Login --newSessionLink--> Admin
+Login --loginButton--> Elections
+
+Admin --votersLink--> Voters
+Admin --electionsLink--> Elections<Admin>
+
+Voters --votersBackButton--> Admin
+
+Elections<Admin> --electionsBackButton--> Admin
+Elections<Admin> --createElectionButton--> CreateElecton
+
+CreateElection --addElectionButton--> Elections<Admin>
+
+Elections<Voter> --ballotButton--> Ballot
+
+Ballot --voteButton--> Elections<Voter>
+Ballot --ballotBackButton--> Elections<Voter>
+
+*/
+// TODO: Put logic here  
+
+function changeState(newState) {
+  $(".state").removeClass("activeState");
+  $("#" + newState).addClass("activeState");
+}
+
+function newSession() {
+  // TODO: Create a new session
+  changeState("admin");
+}
+
+function login() {
+  // TODO: Pull user data, determine if we're admin
+  // If admin, go to admin; if voter, go to elections
+  changeState("elections");
+}
+
+function createElection() {
+  // TODO: Actually create the election
+  changeState("elections");
+}
+
+function openElection() {
+  // TODO: Pull election data from state
+  let uuid = $(this).parent().parent().attr("id");
+  changeState("election-" + uuid);
+}
+
+function openBallot() {
+  // TODO: Pull election data from state
+  let uuid = $(this).parent().parent().attr("id");
+  changeState("ballot-" + uuid);
+}
+
+function vote() {
+  // TODO: Actually submit vote
+  changeState("elections")
+}
+
+function unimplemented() {
+  alert("unimplemented");
+}
+
+$(document).ready(() => {
+  // Wire up actions
+  $(".newSessionLink").click(newSession);
+  $(".loginButton").click(login);
+  $(".createElectionButton").click(createElection);
+  $(".openElectionLink").click(openElection);
+  $(".openBallotButton").click(openBallot);
+  $(".voteButton").click(vote);
+  
+  // Unimplemented
+  $(".addVoterButton").click(unimplemented);
+  $(".removeVoterButton").click(unimplemented);
+  $(".openVotingButton").click(unimplemented);
+  $(".closeVotingButton").click(unimplemented);
+
+  // Simple state changes
+  $(".votersLink").click(() => { changeState("voters"); });
+  $(".electionsLink").click(() => { changeState("elections"); });
+  $(".votersBackButton").click(() => { changeState("admin"); });
+  $(".electionsBackButton").click(() => { changeState("admin"); });
+  $(".electionBackButton").click(() => { changeState("elections"); });
+  $(".createElectionBackButton").click(() => { changeState("elections"); });
+  $(".ballotBackButton").click(() => { changeState("elections"); });
+  $(".openCreateElectionFormButton").click(() => { changeState("createElection"); });
+
+  // Show login
+  changeState("login");
+});
+
+  </script>
+  </head>
+  <body>
+    <div id="login" class="state">
+      <h1>Login</h1>
+      Please enter your secret code to log in:<br/>
+      <input type="text" id="secretCode"/>
+      <button class="loginButton">Login</button> <br/>
+      Or <a href="#" class="newSessionLink">create a new voting session</a>.
+    </div>
+
+    <div id="admin" class="state">
+      Your organization ID is <b>22e2</b>.
+      Your administrator secret code is <b>c32e58cb</b>.
+      <ul>
+        <li><a href="#" class="votersLink">Manage Voters</a></li>
+        <li><a href="#" class="electionsLink">Manage Elections</a></li>
+      </ul>
+    </div>
+
+    <div id="voters" class="state">
+      <button class="votersBackButton">◀</button>
+      <h1>Voters</h1>
+      <table>
+        <tr>
+          <th>Name</th>
+          <th>Secret Code</th>
+          <th></th>
+        </tr>
+        <tr id="voter-6f13b981">
+          <td>John Smith</td>
+          <td>6f13b981</td>
+          <td><button class="removeVoterButton">-</button></td>
+        </tr>
+        <tr id="voter-1cc51580">
+          <td>Jane Doe</td>
+          <td>1cc51580</td>
+          <td><button class="removeVoterButton">-</button></td>
+        </tr>
+      </table>
+      
+      Add: <input type="text" class="voterName">
+      <button class="addVoterButton">+</button>
+    </div>
+
+    <div id="elections" class="state">
+      <button class="electionsBackButton">◀</button>
+      <h1>Elections</h1>
+      <table>
+        <tr>
+          <th>Election Title</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+        <tr id="uuid">
+          <td><a href="#" class="openElectionLink">President</a></td>
+          <td>Open (4/12)</td>
+          <td><button class="openBallotButton">Open Ballot</button></td>
+        </tr>
+      </table>
+      <button class="openCreateElectionFormButton">+</button>
+    </div>
+
+    <div id="createElection" class="state">
+      <button class="createElectionBackButton">◀</button>
+      <h1>Create an Election</h1>
+      Title:
+      <input type="text" id="electionTitle"/>
+      <table>
+        <tr>
+          <th>Option</th>
+          <th></th>
+        </tr>
+        <tr>
+        <tr>
+          <td><input type="text" class="voterName"></td>
+          <td><button class="removeVoterButton">-</button></td>
+        </tr>
+        </tr>
+      </table>
+      <button class="createElectionButton">Create</button>
+    </div>
+
+    <div id="election-uuid" class="state">
+      <button class="electionBackButton">◀</button>
+      <h1>Election Status for $TITLE</h1>
+      
+      <p>
+      Status: <b>Created</b>
+      </p>
+
+      <!-- Display for all elections -->
+      <h2>Options:</h2>
+      <ul>
+        <li>Barack Obama</li>
+        <li>John McCain</li>
+      </ul>
+
+      <!-- Display for INIT elections -->
+      <button class="openVotingButton">Open voting</button>
+
+      <!-- Display for OPEN elections -->
+      <h2>Voters who have not responded:</h2>
+      <ul>
+        <li>John Smith</li>
+        <li>Jane Doe</li>
+      </ul>
+
+      <button class="closeVotingButton">Close voting</button>
+      
+      <!-- Display for CLOSED elections -->
+      <h2>Vote Results:</h2>
+      <table>
+        <tr>
+          <th>Option</th>
+          <th>Votes</th>
+        </tr>
+        <tr>
+          <td>Barack Obama</td>
+          <td>20</td>
+        </tr>
+        <tr>
+          <td>John McCain</td>
+          <td>5</td>
+        </tr>
+      </table>
+    </div>
+
+    <div id="ballot-uuid" class="state">
+      <button class="ballotBackButton">◀</button>
+      <h1>Ballot for $TITLE</h1>
+      <table>
+        <tr>
+          <th>Option</th>
+          <th></th>
+        </tr>
+        <tr>
+          <td>Barack Obama</td>
+          <td><input type="radio" name="ballotOption" value="0"></td>
+        </tr>
+        <tr>
+          <td>John McCain</td>
+          <td><input type="radio" name="ballotOption" value="1"></td>
+        </tr>
+      </table>
+      <button class="voteButton">Vote</button>
+    </div>
+
+  </body>
+</html>

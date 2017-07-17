@@ -2,6 +2,7 @@
 <html>
   <head>
   <meta charset="utf-8"/>
+  <title>elector</title>
   <style type="text/css">
 
 body {
@@ -35,6 +36,29 @@ input {
   display: block;
 }
 
+.overlay {
+    width: 100%;
+    height: 0;
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    background-color: rgb(0,0,0);
+    background-color: rgba(0,0,0, 0.85);
+    overflow-x: hidden;
+    transition: 0.1s;
+}
+
+.overlay-content {
+    position: relative;
+    top: 25%;
+    width: 100%;
+    text-align: center;
+    font-size: 300%;
+    font-weight: bold;
+    color: red;
+}
+
   </style>
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
   <script>
@@ -62,8 +86,8 @@ Data model:
     }
   },
 
-  "elections": [
-    {
+  "elections": {
+    "$CODE": {
       "title": $TITLE,
       "state": <INIT / OPEN / CLOSED>,
       "options": [
@@ -76,21 +100,9 @@ Data model:
         "$SECRET_CODE": $OPTION_INDEX,
         ...
       },
-
-      // Present for OPEN
-      "missing": [
-        "$NAME",
-        ...
-      ],
-
-      // Present for CLOSED
-      "results": [
-        $OPTION_COUNT,
-        ...
-      ]
     },
     ...
-  ]
+  }
 }
 
 ## Server ops
@@ -118,7 +130,7 @@ Admin --electionsLink--> Elections<Admin>
 Voters --votersBackButton--> Admin
 
 Elections<Admin> --electionsBackButton--> Admin
-Elections<Admin> --createElectionButton--> CreateElecton
+Elections<Admin> --addElectionButton--> AddElecton
 
 CreateElection --addElectionButton--> Elections<Admin>
 
@@ -128,74 +140,507 @@ Ballot --voteButton--> Elections<Voter>
 Ballot --ballotBackButton--> Elections<Voter>
 
 */
-// TODO: Put logic here  
+
+const idChars = 8;
+const pollIntervalMS = 1000;
+
+function newID() {
+  return Array.from(new Uint8Array(idChars))
+    .map(() => ((Math.random() * 0x10) & 0x0f).toString(16))
+    .join("");
+}
+
+function waitOn() {
+  // $("div.overlay").height("100%");
+}
+
+function waitOff() {
+  // $("div.overlay").height("0");
+}
+
+class Session {
+  constructor(base) {
+    this.base = base;
+    this.admin = false;
+  }
+
+  newSession() {
+    waitOn();
+    return jsonFetch(this.base + '/new-session', {})
+      .then(session => {
+        this.admin = true;
+        this.user = session.admin;
+        this.session = session;
+        this.render();
+        this.poll();
+        waitOff();
+      });
+  }
+
+  login(user) {
+    waitOn();
+    let req = {user: user};
+    return jsonFetch(this.base + '/login', {user: user})
+      .then(session => {
+        this.admin = (user === session.admin);
+        this.user = user;
+        this.session = session;
+        this.render();
+        this.poll();
+        waitOff();
+      });
+  }
+
+  poll() {
+    let req = {
+      user: this.user,
+      org: this.session.org,
+    }
+    jsonFetch(this.base + '/get-session', req)
+      .then(session => {
+        this.session = session;
+        this.render();
+
+        setTimeout(() => { this.poll(); }, pollIntervalMS);
+      });
+  }
+
+  sync() {
+    let req = {
+      user: this.user,
+      org: this.session.org,
+      voters: this.session.voters,
+      elections: this.session.elections,
+    }
+    return jsonFetch(this.base + '/update-session', req)
+      .then(session => {
+        this.session = session;
+        this.render();
+      })
+  }
+
+  render() {
+    $("span.user").text(this.user);
+
+    if (this.admin) {
+      // Add any new voters in admin UI
+      for (let id in this.session.voters) {
+        let trID = "#voter-" + id;
+        if ($(trID).length > 0) {
+          continue;
+        }
+     
+        let tr = $("<tr></tr>");
+        tr.attr("id", "voter-" + id);
+        tr.append($("<td></td>").text(this.session.voters[id].name));
+        tr.append($("<td></td>").text(id));
+        tr.append($('<td><button class="removeVoterButton">-</button></td>'));
+        $("#voterTable").append(tr);
+     
+        $(".removeVoterButton").click(removeVoter);
+        $(".openBallotButton").click(openBallot);
+      }
+     
+      // Remove any voters that are no longer present
+      for (let tr of $("#voterTable tr")) {
+        let trID = $(tr).attr("id");
+        if (!trID) {
+          continue;
+        }
+     
+        let id = trID.replace(/^voter-/, '');
+        if (id.length > 0 && !this.session.voters[id]) {
+          $(tr).remove();
+        }
+      }
+    } else {
+      $(".electionsBackButton").hide();
+    }
+
+    // Refresh the election UI
+    $("#electionTable tr").remove();
+    
+    let tr = $("<tr></tr>");
+    tr.append($("<th></th>").text("Title"));
+    tr.append($("<th></th>").text("State"));
+    tr.append($("<th></th>"));
+    $("#electionTable").append(tr);
+    
+    for (let id in this.session.elections) {
+      let trID = "#election-" + id;
+      if ($(trID).length > 0) {
+        continue;
+      }
+    
+      // TODO: Expose more state info
+    
+      let a = $('<a href="#" class="openElectionLink"></a>')
+      a.text(this.session.elections[id].title);
+    
+      let tr = $("<tr></tr>");
+      tr.attr("id", "election-" + id);
+      tr.append($("<td></td>").append(a));
+      tr.append($("<td></td>").text(this.session.elections[id].state));
+      if (session.admin) {
+        tr.append($('<td><button class="removeElectionButton">-</button></td>'));
+      } else if (this.session.elections[id].state == 'OPEN') {
+        tr.append($('<td><button class="openBallotButton">Open Ballot</button></td>'));
+      }
+      $("#electionTable").append(tr);
+    
+      $(".openElectionLink").click(openElection);
+      $(".openBallotButton").click(openBallot);
+      $(".removeElectionButton").click(removeElection);
+    }
+
+    let electionID = $("span.electionID").text();
+    if (electionID && electionID.length) {
+      renderElection(electionID);
+    }
+  }
+
+  // TODO Admin actions
+  addVoter(name) {
+    let id = newID();
+    this.session.voters[id] = {name: name};
+    return this.sync().then(() => { this.render(); });
+  }
+
+  removeVoter(id) {
+    if (!(id in this.session.voters)) {
+      return;
+    }
+
+    delete this.session.voters[id];
+    return this.sync().then(() => { this.render(); });
+  }
+
+  addElection(title, options) {
+    let id = newID();
+    this.session.elections[id] = {
+      title: title,
+      options: options,
+      state: 'NEW',
+      votes: {},
+    };
+    return this.sync().then(() => { this.render(); });
+  }
+
+  removeElection(id) {
+    if (!(id in this.session.elections)) {
+      return;
+    }
+
+    delete this.session.elections[id];
+    return this.sync().then(() => { this.render(); });
+  }
+
+  openVoting(id) {
+    if (!(id in this.session.elections)) {
+      return;
+    }
+
+    this.session.elections[id].state = 'OPEN';
+    return this.sync().then(() => { this.render(); });
+  }
+
+  closeVoting(id) {
+    if (!(id in this.session.elections)) {
+      return;
+    }
+
+    this.session.elections[id].state = 'CLOSED';
+    return this.sync().then(() => { this.render(); });
+  }
+
+  vote(id, option) {
+    let req = {
+      user: this.user,
+      org: this.session.org,
+      election: id,
+      option: option,
+    }
+    return jsonFetch(this.base + '/vote', req);
+  }
+}
 
 function changeState(newState) {
   $(".state").removeClass("activeState");
   $("#" + newState).addClass("activeState");
 }
 
+const base = 'http://localhost:8080';
+let session = new Session(base);
+
+function errorMessage(x) {
+  alert(x);
+}
+
 function newSession() {
-  // TODO: Create a new session
-  changeState("admin");
+  session.newSession()
+    .then(() => { changeState("admin"); })
+    .catch(errorMessage);
+}
+
+function closeSession() {
+  // TODO: Tell the server to delete its state for this session
+  changeState("login")
 }
 
 function login() {
-  // TODO: Pull user data, determine if we're admin
-  // If admin, go to admin; if voter, go to elections
-  changeState("elections");
+  let user = $("#secretCode").val();
+  session.login(user)
+    .then(() => {
+      if (session.admin) {
+        changeState("admin");
+      } else {
+        changeState("elections");
+      }
+    })
+    .catch(errorMessage);
 }
 
-function createElection() {
-  // TODO: Actually create the election
-  changeState("elections");
+function addVoter() {
+  let name = $("input.voterName").val();
+  session.addVoter(name);
+}
+
+function removeVoter() {
+  let trID = $(this).parent().parent().attr("id");
+  let id = trID.replace(/^voter-/, '');
+  session.removeVoter(id);
+}
+
+function openAddElectionForm() {
+  $("#optionTable").empty();
+  let tr = $("<tr></tr>").append($("<th>Option</th>"));
+  $("#optionTable").append(tr);
+
+  $("#electionTitle").val("");
+  $("#optionName").val("");
+
+  changeState("addElection"); 
+}
+
+function addOption() {
+  let optionValue = $("#optionName").val();
+  let tr = $("<tr></tr>");
+  tr.append($("<td></td>").text(optionValue));
+  tr.append($('<td><button class="removeOptionButton">-</button></td>'));
+  $("#optionTable").append(tr);
+  $(".removeOptionButton").click(removeOption);
+}
+
+function removeOption() {
+  $(this).parent().parent().remove();
+}
+
+function addElection() {
+  let title = $("#electionTitle").val();
+  let options = [];
+  for (let td of $("#optionTable tr td:first-child")) {
+    options.push($(td).text());
+  }
+
+  session.addElection(title, options)
+    .then(changeState("elections"));
+}
+
+function removeElection() {
+  let trID = $(this).parent().parent().attr("id");
+  let id = trID.replace(/^election-/, '');
+  session.removeElection(id);
 }
 
 function openElection() {
-  // TODO: Pull election data from state
-  let uuid = $(this).parent().parent().attr("id");
-  changeState("election-" + uuid);
+  let id = $(this).parent().parent().attr("id").replace(/^election-/, '');
+  if (!(id in session.session.elections)) {
+    return;
+  }
+
+  renderElection(id);
+  changeState("election");
+}
+
+function renderElection(id) {
+  let election = session.session.elections[id];
+
+  $("span.electionTitle").text(election.title);
+  $("span.electionID").text(id);
+  $("span.electionStatus").text(election.state);
+
+  $("ul.electionOptions").empty();
+  for (let option of election.options) {
+    $("ul.electionOptions").append($("<li></li>").text(option));
+  }
+
+  if (election.missing) {
+    $("ul.missingVoters").empty();
+    for (let voter of election.missing) {
+      let name = session.session.voters[voter].name;
+      $("ul.missingVoters").append($("<li></li>").text(name));
+    }
+    
+    $(".missingVoters").show();
+  } else {
+    $(".missingVoters").hide();
+  }
+
+  if (session.admin && election.voted) {
+    $("ul.respondingVoters").empty();
+    for (let voter of election.voted) {
+      let name = session.session.voters[voter].name;
+      $("ul.respondingVoters").append($("<li></li>").text(name));
+    }
+
+    $(".respondingVoters").show();
+  } else {
+    $(".respondingVoters").hide();
+  }
+
+  if (election.results) {
+    $("#resultTable").empty();
+    
+    let tr = $("<tr></tr>");
+    tr.append($("<th></th>").text("Option"));
+    tr.append($("<th></th>").text("Votes"));
+    $("#resultTable").append(tr);
+
+    for (let option in election.options) {
+      let name = election.options[option];
+      let count = election.results[option] || 0;
+
+      let tr = $("<tr></tr>");
+      tr.append($("<td></td>").text(name));
+      tr.append($("<td></td>").text(count));
+      $("#resultTable").append(tr);
+    }
+  }
+
+  if (session.admin) {
+    $(".openVotingButton").show();
+  } else {
+    $(".openVotingButton").hide();
+  }
+
+  $("#electionOpen").hide();
+  $("#electionClosed").hide();
+  if (election.state == 'OPEN') {
+    $(".openVotingButton").hide();
+    $("#electionOpen").show();
+  } else if (election.state == 'CLOSED') {
+    $(".openVotingButton").hide();
+
+    if (session.admin) {
+      $("#electionClosed").show();
+    }
+  }
+}
+
+function openVoting() {
+  let id = $("span.electionID").text();
+  session.openVoting(id)
+    .then(() => {
+      renderElection(id);
+      $(".openVotingButton").hide();
+      $("#electionOpen").show();
+    });
+}
+
+function closeVoting() {
+  let id = $("span.electionID").text();
+  session.closeVoting(id)
+    .then(() => {
+      renderElection(id);
+      $("#electionOpen").hide();
+      $("#electionClosed").show();
+    })
 }
 
 function openBallot() {
-  // TODO: Pull election data from state
-  let uuid = $(this).parent().parent().attr("id");
-  changeState("ballot-" + uuid);
+  let id = $(this).parent().parent().attr("id").replace(/^election-/, '');
+  if (!(id in session.session.elections)) {
+    return;
+  }
+
+  renderBallot(id);
+  changeState("ballot");
+}
+
+function renderBallot(id) {
+  let election = session.session.elections[id];
+
+  $("span.ballotTitle").text(election.title);
+  $("span.ballotID").text(id);
+
+  $("#ballotTable").empty();
+  for (let i in election.options) {
+    let name = election.options[i];
+    let tr = $("<tr></tr>");
+    tr.append($("<td></td>").text(name));
+
+    let checkbox = $('<input type="radio" name="ballotOption"/>');
+    checkbox.val(i);
+    tr.append($("<td></td>").append(checkbox));
+    $("#ballotTable").append(tr);
+  }
 }
 
 function vote() {
-  // TODO: Actually submit vote
-  changeState("elections")
+  let id = $("span.ballotID").text();
+  let option = $("input[name=ballotOption]:checked").val();
+
+  return session.vote(id, option)
+    .then(() => {
+      changeState("elections");
+    });
 }
 
 function unimplemented() {
   alert("unimplemented");
 }
 
+function jsonFetch(url, obj) {
+  let headers = new Headers();
+  headers.append('content-type', 'application/json');
+
+  return fetch(url, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(obj),
+  })
+    .then(resp => {
+      if (resp.status !== 200) {
+        return resp.text().then(x => { throw x });
+      }
+
+      return resp.json();
+    });
+}
+
 $(document).ready(() => {
   // Wire up actions
   $(".newSessionLink").click(newSession);
   $(".loginButton").click(login);
-  $(".createElectionButton").click(createElection);
+  $(".addVoterButton").click(addVoter);
+  $(".removeVoterButton").click(removeVoter);
+  $(".addOptionButton").click(addOption);
+  $(".openAddElectionFormButton").click(openAddElectionForm);
+  $(".addElectionButton").click(addElection);
   $(".openElectionLink").click(openElection);
+  $(".openVotingButton").click(openVoting);
+  $(".closeVotingButton").click(closeVoting);
   $(".openBallotButton").click(openBallot);
   $(".voteButton").click(vote);
   
-  // Unimplemented
-  $(".addVoterButton").click(unimplemented);
-  $(".removeVoterButton").click(unimplemented);
-  $(".openVotingButton").click(unimplemented);
-  $(".closeVotingButton").click(unimplemented);
-
   // Simple state changes
   $(".votersLink").click(() => { changeState("voters"); });
   $(".electionsLink").click(() => { changeState("elections"); });
   $(".votersBackButton").click(() => { changeState("admin"); });
   $(".electionsBackButton").click(() => { changeState("admin"); });
   $(".electionBackButton").click(() => { changeState("elections"); });
-  $(".createElectionBackButton").click(() => { changeState("elections"); });
+  $(".addElectionBackButton").click(() => { changeState("elections"); });
   $(".ballotBackButton").click(() => { changeState("elections"); });
-  $(".openCreateElectionFormButton").click(() => { changeState("createElection"); });
 
   // Show login
   changeState("login");
@@ -204,6 +649,12 @@ $(document).ready(() => {
   </script>
   </head>
   <body>
+    <div class="overlay">
+      <div class="overlay-content">
+        WAIT
+      </div>
+    </div>
+
     <div id="login" class="state">
       <h1>Login</h1>
       Please enter your secret code to log in:<br/>
@@ -213,18 +664,19 @@ $(document).ready(() => {
     </div>
 
     <div id="admin" class="state">
-      Your organization ID is <b>22e2</b>.
-      Your administrator secret code is <b>c32e58cb</b>.
+      Your administrator secret code is <b><span class="user"></span></b>.
       <ul>
         <li><a href="#" class="votersLink">Manage Voters</a></li>
         <li><a href="#" class="electionsLink">Manage Elections</a></li>
+        <li><a href="#" class="logoutLink">Log out and delete session data</a></li>
       </ul>
     </div>
 
     <div id="voters" class="state">
       <button class="votersBackButton">◀</button>
       <h1>Voters</h1>
-      <table>
+      <table id="voterTable">
+        <!--
         <tr>
           <th>Name</th>
           <th>Secret Code</th>
@@ -240,6 +692,7 @@ $(document).ready(() => {
           <td>1cc51580</td>
           <td><button class="removeVoterButton">-</button></td>
         </tr>
+        -->
       </table>
       
       Add: <input type="text" class="voterName">
@@ -249,90 +702,109 @@ $(document).ready(() => {
     <div id="elections" class="state">
       <button class="electionsBackButton">◀</button>
       <h1>Elections</h1>
-      <table>
+      <table id="electionTable">
+        <!--
         <tr>
           <th>Election Title</th>
           <th>Status</th>
           <th></th>
         </tr>
-        <tr id="uuid">
+        <tr id="election-id">
           <td><a href="#" class="openElectionLink">President</a></td>
           <td>Open (4/12)</td>
           <td><button class="openBallotButton">Open Ballot</button></td>
         </tr>
+        -->
       </table>
-      <button class="openCreateElectionFormButton">+</button>
+      <button class="openAddElectionFormButton">+</button>
     </div>
 
-    <div id="createElection" class="state">
-      <button class="createElectionBackButton">◀</button>
+    <div id="addElection" class="state">
+      <button class="addElectionBackButton">◀</button>
       <h1>Create an Election</h1>
       Title:
       <input type="text" id="electionTitle"/>
-      <table>
+      <table id="optionTable">
+        <!--
         <tr>
           <th>Option</th>
-          <th></th>
         </tr>
-        <tr>
-        <tr>
-          <td><input type="text" class="voterName"></td>
-          <td><button class="removeVoterButton">-</button></td>
-        </tr>
-        </tr>
+        -->
       </table>
-      <button class="createElectionButton">Create</button>
+      <input type="text" id="optionName">
+      <button class="addOptionButton">+</button>
+      <br/>
+      <button class="addElectionButton">Create</button>
     </div>
 
-    <div id="election-uuid" class="state">
+    <div id="election" class="state">
       <button class="electionBackButton">◀</button>
-      <h1>Election Status for $TITLE</h1>
+      <h1>Election Status for <span class="electionTitle"></span> (<span class="electionID"></span>)</h1>
       
       <p>
-      Status: <b>Created</b>
+      Status: <b><span class="electionStatus"></span></b>
       </p>
 
       <!-- Display for all elections -->
       <h2>Options:</h2>
-      <ul>
+      <ul class="electionOptions">
+        <!--
         <li>Barack Obama</li>
         <li>John McCain</li>
+        -->
       </ul>
 
       <!-- Display for INIT elections -->
       <button class="openVotingButton">Open voting</button>
 
       <!-- Display for OPEN elections -->
-      <h2>Voters who have not responded:</h2>
-      <ul>
-        <li>John Smith</li>
-        <li>Jane Doe</li>
-      </ul>
-
-      <button class="closeVotingButton">Close voting</button>
+      <div id="electionOpen">
+        <h2 class="missingVoters">Voters who have not responded:</h2>
+        <ul class="missingVoters">
+          <!--
+          <li>John Smith</li>
+          <li>Jane Doe</li>
+          -->
+        </ul>
+       
+        <button class="closeVotingButton">Close voting</button>
+      </div>
       
       <!-- Display for CLOSED elections -->
-      <h2>Vote Results:</h2>
-      <table>
-        <tr>
-          <th>Option</th>
-          <th>Votes</th>
-        </tr>
-        <tr>
-          <td>Barack Obama</td>
-          <td>20</td>
-        </tr>
-        <tr>
-          <td>John McCain</td>
-          <td>5</td>
-        </tr>
-      </table>
+      <div id="electionClosed">
+        <h2 class="respondingVoters">Voters who responded:</h2>
+        <ul class="respondingVoters">
+          <!--
+          <li>John Smith</li>
+          <li>Jane Doe</li>
+          -->
+        </ul>
+
+        <h2>Vote Results:</h2>
+        <table id="resultTable">
+          <!--
+          <tr>
+            <th>Option</th>
+            <th>Votes</th>
+          </tr>
+          <tr>
+            <td>Barack Obama</td>
+            <td>20</td>
+          </tr>
+          <tr>
+            <td>John McCain</td>
+            <td>5</td>
+          </tr>
+          -->
+        </table>
+      </div>
     </div>
 
-    <div id="ballot-uuid" class="state">
+    <div id="ballot" class="state">
       <button class="ballotBackButton">◀</button>
-      <h1>Ballot for $TITLE</h1>
-      <table>
+      <h1>Ballot for <span class="ballotTitle">$TITLE</span> (<span class="ballotID"></span>)</h1>
+      <table id="ballotTable">
+        <!--
         <tr>
           <th>Option</th>
           <th></th>
@@ -345,6 +817,7 @@ $(document).ready(() => {
           <td>John McCain</td>
           <td><input type="radio" name="ballotOption" value="1"></td>
         </tr>
+        -->
       </table>
       <button class="voteButton">Vote</button>
     </div>

@@ -1,0 +1,11 @@
+{
+  "name": "elector",
+  "version": "0.0.1",
+  "description": "A simple web app for running elections",
+  "main": "lib/index.js",
+  "license": "MPL-2.0",
+  "dependencies": {
+    "body-parser": "latest",
+    "express": "^4.13"
+  }
+}

@@ -10,7 +10,7 @@ body {
 }
 
 div {
-  border-bottom: 1px solid black;
+  border: 1px solid #b0b;
 }
 
 button {
@@ -28,12 +28,36 @@ input {
   font-weight: bold;
 }
 
-.state {
+div.state {
   display: none;
+  width: 30em;
+  margin: 0 auto;
+  padding: 0.5em;
 }
 
-.activeState {
+div.activeState {
   display: block;
+}
+
+h1, th {
+  background: #339;
+  color: white;
+  padding: 0.5em;
+}
+
+table {
+  width: 100%;
+}
+
+td {
+  border: 1px solid lightgray;
+  border-collapse: collapse;
+  padding: 0.5em;
+}
+
+th {
+  border: 1px solid #339;
+  border-collapse: collapse;
 }
 
 .overlay {
@@ -142,7 +166,7 @@ Ballot --ballotBackButton--> Elections<Voter>
 */
 
 const idChars = 8;
-const pollIntervalMS = 1000;
+const pollIntervalMS = 10000;
 
 function newID() {
   return Array.from(new Uint8Array(idChars))
@@ -664,6 +688,7 @@ $(document).ready(() => {
     </div>
 
     <div id="admin" class="state">
+      <h1>Admin</h1>
       Your administrator secret code is <b><span class="user"></span></b>.
       <ul>
         <li><a href="#" class="votersLink">Manage Voters</a></li>
@@ -675,25 +700,7 @@ $(document).ready(() => {
     <div id="voters" class="state">
       <button class="votersBackButton">◀</button>
       <h1>Voters</h1>
-      <table id="voterTable">
-        <!--
-        <tr>
-          <th>Name</th>
-          <th>Secret Code</th>
-          <th></th>
-        </tr>
-        <tr id="voter-6f13b981">
-          <td>John Smith</td>
-          <td>6f13b981</td>
-          <td><button class="removeVoterButton">-</button></td>
-        </tr>
-        <tr id="voter-1cc51580">
-          <td>Jane Doe</td>
-          <td>1cc51580</td>
-          <td><button class="removeVoterButton">-</button></td>
-        </tr>
-        -->
-      </table>
+      <table id="voterTable"></table>
       
       Add: <input type="text" class="voterName">
       <button class="addVoterButton">+</button>
@@ -702,20 +709,7 @@ $(document).ready(() => {
     <div id="elections" class="state">
       <button class="electionsBackButton">◀</button>
       <h1>Elections</h1>
-      <table id="electionTable">
-        <!--
-        <tr>
-          <th>Election Title</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-        <tr id="election-id">
-          <td><a href="#" class="openElectionLink">President</a></td>
-          <td>Open (4/12)</td>
-          <td><button class="openBallotButton">Open Ballot</button></td>
-        </tr>
-        -->
-      </table>
+      <table id="electionTable"></table>
       <button class="openAddElectionFormButton">+</button>
     </div>
 
@@ -724,13 +718,7 @@ $(document).ready(() => {
       <h1>Create an Election</h1>
       Title:
       <input type="text" id="electionTitle"/>
-      <table id="optionTable">
-        <!--
-        <tr>
-          <th>Option</th>
-        </tr>
-        -->
-      </table>
+      <table id="optionTable"></table>
       <input type="text" id="optionName">
       <button class="addOptionButton">+</button>
       <br/>
@@ -747,12 +735,7 @@ $(document).ready(() => {
 
       <!-- Display for all elections -->
       <h2>Options:</h2>
-      <ul class="electionOptions">
-        <!--
-        <li>Barack Obama</li>
-        <li>John McCain</li>
-        -->
-      </ul>
+      <ul class="electionOptions"></ul>
 
       <!-- Display for INIT elections -->
       <button class="openVotingButton">Open voting</button>
@@ -760,12 +743,7 @@ $(document).ready(() => {
       <!-- Display for OPEN elections -->
       <div id="electionOpen">
         <h2 class="missingVoters">Voters who have not responded:</h2>
-        <ul class="missingVoters">
-          <!--
-          <li>John Smith</li>
-          <li>Jane Doe</li>
-          -->
-        </ul>
+        <ul class="missingVoters"></ul>
        
         <button class="closeVotingButton">Close voting</button>
       </div>
@@ -773,52 +751,17 @@ $(document).ready(() => {
       <!-- Display for CLOSED elections -->
       <div id="electionClosed">
         <h2 class="respondingVoters">Voters who responded:</h2>
-        <ul class="respondingVoters">
-          <!--
-          <li>John Smith</li>
-          <li>Jane Doe</li>
-          -->
-        </ul>
+        <ul class="respondingVoters"></ul>
 
         <h2>Vote Results:</h2>
-        <table id="resultTable">
-          <!--
-          <tr>
-            <th>Option</th>
-            <th>Votes</th>
-          </tr>
-          <tr>
-            <td>Barack Obama</td>
-            <td>20</td>
-          </tr>
-          <tr>
-            <td>John McCain</td>
-            <td>5</td>
-          </tr>
-          -->
-        </table>
+        <table id="resultTable"></table>
       </div>
     </div>
 
     <div id="ballot" class="state">
       <button class="ballotBackButton">◀</button>
       <h1>Ballot for <span class="ballotTitle">$TITLE</span> (<span class="ballotID"></span>)</h1>
-      <table id="ballotTable">
-        <!--
-        <tr>
-          <th>Option</th>
-          <th></th>
-        </tr>
-        <tr>
-          <td>Barack Obama</td>
-          <td><input type="radio" name="ballotOption" value="0"></td>
-        </tr>
-        <tr>
-          <td>John McCain</td>
-          <td><input type="radio" name="ballotOption" value="1"></td>
-        </tr>
-        -->
-      </table>
+      <table id="ballotTable"></table>
       <button class="voteButton">Vote</button>
     </div>
 
